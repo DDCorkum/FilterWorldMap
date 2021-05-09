@@ -7,7 +7,11 @@
 ## Version: 1.1
 
 
-Changelog by
+Changelog
+
+1.2 (9 May 2020) by Dahk Celes
+- Performance improvement by hooking only two data providers instead of the whole world map
+- AreaPOIPinTemplate pins are now sub-divided into anima conductors and the remainder.
 
 1.1 (8 May 2020) by Dahk Celes
 - Filters can be turned on/off from drop-down options in the WorldMapFrame
@@ -18,153 +22,112 @@ Changelog by
 
 --]]
 
----- CONSTANTS ----
 
--- List of all templates that can be hidden, and a localized option name from GlobalStrings.lua
-local ALL_OPTIONS =
-{
-	["AreaPOIPinTemplate"] = MINIMAP_TRACKING_POI,
-	["BonusObjectivePinTemplate"] = TRACKER_HEADER_BONUS_OBJECTIVES,
-}
+--------------------------
+-- Saved Variables
 
--- List of templates to be hidden by default
-local DEFAULT_OPTIONS =
-{
-	-- ["AreaPOIPinTemplate"] = true,		-- example only; for now, this table is empty because the default is to filter nothing.
-}
-
-
----- ACTUAL CODE ----
-
--- Everything happens at PLAYER_LOGIN.
--- No reason this couldn't be sooner at ADDON_LOADED.  I'm just lazy.
-
+local toHide = {}
 
 local listener = CreateFrame("Frame")
-listener:RegisterEvent("PLAYER_LOGIN")
+listener:RegisterEvent("ADDON_LOADED")
 listener:SetScript("OnEvent", function()
-
-	-- Initialize the options if it doesn't exist
-	local toHide = FilterWorldMapOptions or Mixin({}, DEFAULT_OPTIONS)
+	toHide = FilterWorldMapOptions or toHide
 	FilterWorldMapOptions = toHide
-
-	-- Self explanatory.  See Blizzard_MapCanvas.lua
-	local function removeUnwantedPins()
-		for template in pairs(toHide) do
-			WorldMapFrame:RemoveAllPinsByTemplate(template)
-		end	
-	end
-
-	-- Hook everything the WorldMapFrame does.  (This might be overkill.)
-	hooksecurefunc(WorldMapFrame, "RefreshAllDataProviders", removeUnwantedPins)
-	hooksecurefunc(WorldMapFrame, "OnMapChanged", removeUnwantedPins)
-	WorldMapFrame:HookScript("OnShow", removeUnwantedPins)
-	WorldMapFrame:HookScript("OnEvent", removeUnwantedPins)
-	
-
-	-- Append the options to the WorldMapTrackingOptionsButton drop down menu
-	-- Caution: on the world map it appears as 'filters' so checked means toHide=nil, unchecked means toHide=true
-	local button = WorldMapFrame.overlayFrames[2]
-	if (button.InitializeDropDown) then
-		hooksecurefunc(button, "InitializeDropDown", function()
-			local info = UIDropDownMenu_CreateInfo()
-			
-			UIDropDownMenu_AddSeparator()
-			
-			info.isTitle = true
-			info.notCheckable = true
-			info.text = WORLD_MAP_FILTER_TITLE .. "       |cff666666(FilterWorldMap)"
-			UIDropDownMenu_AddButton(info)
-			
-			info.isTitle = nil
-			info.disabled = nil
-			info.notCheckable = nil
-			info.isNotRadio = true
-			info.keepShownOnClick = true
-			
-			for template, name in pairs(ALL_OPTIONS) do
-				info.text = name 
-				info.value = template
-				info.checked = not toHide[template]
-				info.func = function(btn) 
-					toHide[btn.value] = not btn.checked or nil
-					WorldMapFrame:RefreshAllDataProviders()
-					
-					-- Restore this if recreating the interface options panel that is commented out below
-					--for __, cb in ipairs(panel) do
-					--	if (cb.template == btn.value) then
-					--		cb:SetChecked(not btn.checked)
-					--	end
-					--end
-					
-				end
-				UIDropDownMenu_AddButton(info)
-			end
-			
-		end)
-	end
-	
-	
-	--[[
-	
-		-- Variant of original v1.0 code that would have put the options in an interface panel.
-		-- This isn't necessary since the filters are available from a dropdown right in the world map
-		
-				-- Create an interface panel with the options
-				local originalOptions = {}
-	
-				local function setOption(cb)
-					originalOptions[cb.template] = originalOptions[cb.template] or not cb:GetChecked()
-					toHide[cb.template] = cb:GetChecked() or nil
-					if WorldMapFrame:IsShown() then
-						WorldMapFrame:RefreshAllDataProviders()
-					end
-				end
-	
-				local panel = CreateFrame("Frame")
-				panel.name = "HideWorldMapIcons"
-				panel.okay = function()
-					wipe(originalOptions)
-				end
-				panel.cancel = function()
-					for template, val in pairs(originalOptions) do
-						toHide[template] = val or nil
-					end
-					for __, cb in ipairs(panel) do
-						cb:SetChecked(toHide[cb.template])
-					end
-				end
-				panel.default = function()
-					wipe(toHide)
-					Mixin(toHide, DEFAULT_OPTIONS)
-					for __, cb in ipairs(panel) do
-						cb:SetChecked(toHide[cb.template])
-					end
-				end
-	
-				local i=1
-				local fs = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-				fs:SetText(CLICK_TO_REMOVE_ADDITIONAL_QUEST_LOCATIONS)
-				fs:SetTextColor(0.9, 0.9, 0.9)
-				fs:SetPoint("TOPLEFT", panel, 20, -20)
-				for template, name in pairs(ALL_OPTIONS) do
-					local cb = CreateFrame("CheckButton", "FilterWorldMapInterfaceOptionsCheckButton" .. i, panel, "OptionsCheckButtonTemplate")
-					cb.template = template
-					_G["FilterWorldMapInterfaceOptionsCheckButton" .. i .. "Text"]:SetText(name)
-					cb:SetChecked(toHide[template])
-					cb:SetScript("OnClick", setOption)
-					cb:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -20 -(i*30))
-					panel[i] = cb
-					i = i+1
-				end
-	
-				InterfaceOptions_AddCategory(panel)
-		
-				-- Add a slash command
-				SlashCmdList.FILTERWORLDMAP = function() InterfaceOptionsFrame_OpenToCategory(panel) end
-				SLASH_FILTERWORLDMAP1 = "/FilterWorldMap"		
-
-
-	--]]
-
 end)
+
+
+--------------------------
+-- Execution
+
+do
+	-- STEP 1: Establish custom code to fire after each data provider
+	-- STEP 2: Securely hook each data provider's RefreshAllData() func
+
+	-- STEP 1:
+	-- 	key		table		Mixin upon which the dataProvider is based
+	--	val		function	Function to be securely hooked after RefreshAllData()
+	local funcs =
+	{
+		-- Filters points of interest, including Shadowlands Anima Conductors
+		[AreaPOIDataProviderMixin] = function(self)
+			for pin in WorldMapFrame:EnumeratePinsByTemplate("AreaPOIPinTemplate") do
+				if pin.description:find(ANIMA_DIVERSION_ORIGIN_TOOLTIP) then
+					if (toHide.AreaPOIPinTemplate_AnimaConductors) then
+						WorldMapFrame:RemovePin(pin)
+					end
+				else
+					if (toHide.AreaPOIPinTemplate_Remainder) then
+						WorldMapFrame:RemovePin(pin)
+					end
+				end
+			end
+		end,
+
+		-- Filters bonus objectives
+		[BonusObjectiveDataProviderMixin] = function(self)
+			if toHide.BonusObjectivePinTemplate then
+				self:RemoveAllData()
+			end
+		end,
+	}
+
+	-- STEP 2:
+	for dataProvider in pairs(WorldMapFrame.dataProviders) do
+		for mixin, func in pairs(funcs) do
+			if dataProvider.RefreshAllData == mixin.RefreshAllData then
+				hooksecurefunc(dataProvider, "RefreshAllData", func)
+			end
+		end
+	end
+end
+
+
+--------------------------
+-- Options Drop Down
+
+do
+	-- STEP 1: Localization
+	-- STEP 2: Create a helper func for turning filters on/off
+	-- STEP 3: Hook the WorldMapTrackingOptionsButton drop down menu
+	
+	-- STEP 1:
+	local ALL_OPTIONS =
+	{
+		{ value = "AreaPOIPinTemplate_AnimaConductors", text = ANIMA_DIVERSION_ORIGIN_TOOLTIP .. " (" .. EXPANSION_NAME8 .. ")", continent = 1550},
+		{ value = "AreaPOIPinTemplate_Remainder", text = MINIMAP_TRACKING_POI},
+		{ value = "BonusObjectivePinTemplate", text = TRACKER_HEADER_BONUS_OBJECTIVES, },
+	}
+	
+	-- STEP 2:
+	local function setOption(btn)
+		-- Caution: items are 'included' when checked (toHide=nil), and 'filtered' when unchecked (toHide=true)
+		toHide[btn.value] = not btn.checked or nil
+		WorldMapFrame:RefreshAllDataProviders()
+	end
+
+	-- STEP 3:
+	local infoTitle = 
+	{
+		isTitle = true,
+		notCheckable = true,
+		text = WORLD_MAP_FILTER_TITLE .. "       |cff666666(FilterWorldMap)",
+	}
+	local infoOption =
+	{
+		isNotRadio = true,
+		keepShownOnClick = true,
+		func = setOption
+	}
+	hooksecurefunc(WorldMapFrame.overlayFrames[2], "InitializeDropDown", function()
+		UIDropDownMenu_AddSeparator()
+		UIDropDownMenu_AddButton(infoTitle)
+		for __, option in ipairs(ALL_OPTIONS) do
+			if (option.continent == nil or C_Map.GetMapInfo(WorldMapFrame:GetMapID()).parentMapID == option.continent) then
+				infoOption.value = option.value
+				infoOption.text = option.text
+				infoOption.checked = not toHide[option.value]
+				UIDropDownMenu_AddButton(infoOption)
+			end
+		end
+	end)
+end
