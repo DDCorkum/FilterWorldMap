@@ -4,7 +4,7 @@
 ## Notes: Removes icons from the WorldMapFrame
 ## Author: Dahk Celes (DDCorkum)
 ## X-License: Public Domain.  Please clearly mark changes.  <http://unlicense.org>
-## Version: 1.1
+## Version: 1.2
 
 
 Changelog
