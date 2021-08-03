@@ -4,20 +4,23 @@
 ## Notes: Removes icons from the WorldMapFrame
 ## Author: Dahk Celes (DDCorkum)
 ## X-License: Public Domain.  Please clearly mark changes.  <http://unlicense.org>
-## Version: 1.2
+## Version: 1.3
 
 
 Changelog
 
-1.2 (9 May 2020) by Dahk Celes
+1.3 (3 Aug 2021) by Dahk Celes
+- Added an option for vignettes, such as the locations of chests
+
+1.2 (9 May 2021) by Dahk Celes
 - Performance improvement by hooking only two data providers instead of the whole world map
 - AreaPOIPinTemplate pins are now sub-divided into anima conductors and the remainder.
 
-1.1 (8 May 2020) by Dahk Celes
+1.1 (8 May 2021) by Dahk Celes
 - Filters can be turned on/off from drop-down options in the WorldMapFrame
 - Renaming from 'HideWorldMapFrame' to 'FilterWorldMap'
 
-1.0 (7 May 2020) by Dahk Celes
+1.0 (7 May 2021) by Dahk Celes
 - Initial version requested by a user on WoWI
 
 --]]
@@ -56,7 +59,7 @@ do
 						WorldMapFrame:RemovePin(pin)
 					end
 				else
-					if (toHide.AreaPOIPinTemplate_Remainder) then
+					if toHide.AreaPOIPinTemplate_Remainder then
 						WorldMapFrame:RemovePin(pin)
 					end
 				end
@@ -66,6 +69,12 @@ do
 		-- Filters bonus objectives
 		[BonusObjectiveDataProviderMixin] = function(self)
 			if toHide.BonusObjectivePinTemplate then
+				self:RemoveAllData()
+			end
+		end,
+		
+		[VignetteDataProviderMixin] = function(self)
+			if toHide.VignettePinTemplate then
 				self:RemoveAllData()
 			end
 		end,
@@ -96,6 +105,7 @@ do
 		{ value = "AreaPOIPinTemplate_AnimaConductors", text = ANIMA_DIVERSION_ORIGIN_TOOLTIP .. " (" .. EXPANSION_NAME8 .. ")", continent = 1550},
 		{ value = "AreaPOIPinTemplate_Remainder", text = MINIMAP_TRACKING_POI},
 		{ value = "BonusObjectivePinTemplate", text = TRACKER_HEADER_BONUS_OBJECTIVES, },
+		{ value = "VignettePinTemplate", text = BATTLE_PET_SOURCE_11 .. " (Vignettes)", },
 	}
 	
 	-- STEP 2:
